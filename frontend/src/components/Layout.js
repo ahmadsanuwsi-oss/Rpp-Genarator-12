@@ -5,7 +5,7 @@ import { GENERATORS } from "@/lib/docTypes";
 import {
   LayoutDashboard, FileText, CalendarRange, CalendarDays, ClipboardCheck,
   Clock, Waypoints, ListChecks, PencilRuler, Image as ImageIcon, LogOut,
-  GraduationCap, Menu, X, User,
+  GraduationCap, Menu, X, User, ShieldCheck, Users,
 } from "lucide-react";
 
 const ICONS = {
@@ -52,19 +52,33 @@ export default function Layout({ children }) {
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" testid="nav-dashboard" />
-        <NavItem to="/rpp/new" icon={FileText} label="Buat RPP" testid="nav-rpp" />
-        <div className="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-emerald-300/60 font-semibold">
-          Perangkat Lain
-        </div>
-        {GENERATORS.map((g) => (
+
+        {(user?.role === "admin" || user?.role === "superadmin") && (
           <NavItem
-            key={g.key}
-            to={`/generate/${g.key}`}
-            icon={ICONS[g.icon] || FileText}
-            label={g.label}
-            testid={`nav-${g.key}`}
+            to="/users"
+            icon={user?.role === "superadmin" ? ShieldCheck : Users}
+            label={user?.role === "superadmin" ? "Kelola Admin" : "Kelola Guru"}
+            testid="nav-users"
           />
-        ))}
+        )}
+
+        {user?.role !== "superadmin" && (
+          <>
+            <NavItem to="/rpp/new" icon={FileText} label="Buat RPP" testid="nav-rpp" />
+            <div className="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-emerald-300/60 font-semibold">
+              Perangkat Lain
+            </div>
+            {GENERATORS.map((g) => (
+              <NavItem
+                key={g.key}
+                to={`/generate/${g.key}`}
+                icon={ICONS[g.icon] || FileText}
+                label={g.label}
+                testid={`nav-${g.key}`}
+              />
+            ))}
+          </>
+        )}
       </nav>
 
       <div className="border-t border-white/10 p-3">

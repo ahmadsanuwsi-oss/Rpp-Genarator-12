@@ -94,8 +94,7 @@ export default function Login() {
             {loading && <Loader2 className="w-4 h-4 animate-spin" />} Masuk
           </button>
           <p className="text-center text-sm text-slate-500 mt-5">
-            Belum punya akun?{" "}
-            <Link to="/register" data-testid="link-register" className="text-emerald-800 font-semibold hover:underline">Daftar di sini</Link>
+            Akun dibuat oleh Admin sekolah Anda.
           </p>
           <div className="mt-4 text-center text-xs text-slate-400">
             Demo: guru@demo.com / guru123

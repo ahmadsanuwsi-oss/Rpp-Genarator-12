@@ -37,6 +37,7 @@ export default function RppEditor() {
         nip: user?.nip || "",
         jabatan: user?.jabatan || "",
         namaSekolah: user?.namaSekolah || "",
+        alamatSekolah: user?.alamatSekolah || "",
         namaKepalaSekolah: user?.namaKepalaSekolah || "",
         nipKepalaSekolah: user?.nipKepalaSekolah || "",
       }));

@@ -5,12 +5,12 @@ import { AuthProvider } from "@/context/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Layout from "@/components/Layout";
 import Login from "@/pages/Login";
-import Register from "@/pages/Register";
 import Dashboard from "@/pages/Dashboard";
 import RppEditor from "@/pages/RppEditor";
 import Generator from "@/pages/Generator";
 import Viewer from "@/pages/Viewer";
 import Profile from "@/pages/Profile";
+import UserManagement from "@/pages/UserManagement";
 
 const Shell = ({ children }) => (
   <ProtectedRoute>
@@ -26,9 +26,10 @@ function App() {
           <Toaster position="top-right" richColors />
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            <Route path="/register" element={<Navigate to="/login" replace />} />
 
             <Route path="/dashboard" element={<Shell><Dashboard /></Shell>} />
+            <Route path="/users" element={<Shell><UserManagement /></Shell>} />
             <Route path="/profile" element={<Shell><Profile /></Shell>} />
             <Route path="/rpp/new" element={<Shell><RppEditor /></Shell>} />
             <Route path="/rpp/:id" element={<Shell><RppEditor /></Shell>} />

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { RPP_SECTIONS, TYPE_LABEL } from "@/lib/docTypes";
-import { ArrowLeft, Printer, Pencil, Loader2, Download } from "lucide-react";
+import { ArrowLeft, Printer, Pencil, Loader2, Download, FileDown, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Viewer() {
@@ -31,17 +31,46 @@ export default function Viewer() {
 
   const editLink = doc.type === "rpp" ? `/rpp/${doc.id}` : `/generate/${doc.type}/${doc.id}`;
 
+  const downloadDocx = async () => {
+    try {
+      toast.message("Menyiapkan file Word...");
+      const res = await api.get(`/documents/${doc.id}/docx`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(doc.title || "dokumen").replace(/[^a-z0-9]+/gi, "_")}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { toast.error("Gagal mengunduh Word"); }
+  };
+
+  const duplicate = async () => {
+    try {
+      const { data } = await api.post(`/documents/${doc.id}/duplicate`);
+      toast.success("Dokumen diduplikat");
+      navigate(data.type === "rpp" ? `/rpp/${data.id}` : `/generate/${data.type}/${data.id}`);
+    } catch { toast.error("Gagal menduplikat"); }
+  };
+
   return (
     <div className="a4-desk min-h-screen">
       {/* Toolbar */}
-      <div className="no-print sticky top-0 z-20 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
+      <div className="no-print sticky top-0 z-20 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
         <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-emerald-800">
           <ArrowLeft className="w-4 h-4" /> Dashboard
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="hidden sm:inline text-xs uppercase font-bold px-2 py-1 rounded bg-emerald-100 text-emerald-800">
             {TYPE_LABEL[doc.type] || doc.type}
           </span>
+          <button data-testid="btn-duplicate-doc" onClick={duplicate}
+            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">
+            <Copy className="w-4 h-4" /> Duplikat
+          </button>
+          <button data-testid="btn-docx-doc" onClick={downloadDocx}
+            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50">
+            <FileDown className="w-4 h-4" /> Word
+          </button>
           <Link to={editLink} data-testid="btn-edit-doc"
             className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">
             <Pencil className="w-4 h-4" /> Edit
@@ -77,6 +106,7 @@ function KopSekolah({ doc }) {
   const f = doc.fields || {};
   const m = doc.meta || {};
   const sekolah = f.namaSekolah || m.namaSekolah || "";
+  const alamat = f.alamatSekolah || m.alamatSekolah || "";
   const title =
     doc.type === "rpp"
       ? "RENCANA PELAKSANAAN PEMBELAJARAN (RPP)"
@@ -84,7 +114,8 @@ function KopSekolah({ doc }) {
   return (
     <div className="text-center border-b-2 border-black pb-3 mb-4">
       {sekolah && <div className="text-lg font-bold uppercase">{sekolah}</div>}
-      <div className="text-base font-bold uppercase mt-1">{title}</div>
+      {alamat && <div className="text-xs mt-0.5">{alamat}</div>}
+      <div className="text-base font-bold uppercase mt-2">{title}</div>
       {doc.type !== "rpp" && (
         <div className="text-sm mt-1">
           {[m.mataPelajaran, m.kelas && `Kelas ${m.kelas}`, m.semester, m.tahunAjaran].filter(Boolean).join(" · ")}

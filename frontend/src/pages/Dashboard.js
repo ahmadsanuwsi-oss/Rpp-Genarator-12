@@ -6,7 +6,7 @@ import { RPP_TYPE, GENERATORS, TYPE_LABEL } from "@/lib/docTypes";
 import {
   FileText, CalendarRange, CalendarDays, ClipboardCheck, Clock, Waypoints,
   ListChecks, PencilRuler, Image as ImageIcon, Plus, Upload, Printer, Trash2,
-  Loader2, Search, Sparkles, Eye, FolderOpen,
+  Loader2, Search, Sparkles, Eye, FolderOpen, Users, Copy, FileDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -50,6 +50,29 @@ export default function Dashboard() {
     } catch { toast.error("Gagal menghapus"); }
   };
 
+  const duplicate = async (id) => {
+    try {
+      const { data } = await api.post(`/documents/${id}/duplicate`);
+      toast.success("Dokumen diduplikat");
+      navigate(data.type === "rpp" ? `/rpp/${data.id}` : `/generate/${data.type}/${data.id}`);
+    } catch { toast.error("Gagal menduplikat"); }
+  };
+
+  const downloadDocx = async (doc) => {
+    try {
+      toast.message("Menyiapkan file Word...");
+      const res = await api.get(`/documents/${doc.id}/docx`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(doc.title || "dokumen").replace(/[^a-z0-9]+/gi, "_")}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { toast.error("Gagal mengunduh Word"); }
+  };
+
+  const isManager = user?.role === "admin" || user?.role === "superadmin";
+
   const editLink = (doc) => (doc.type === "rpp" ? `/rpp/${doc.id}` : `/generate/${doc.type}/${doc.id}`);
 
   const filtered = docs.filter((d) => {
@@ -71,44 +94,70 @@ export default function Dashboard() {
       </div>
 
       {/* Primary create actions */}
-      <div className="grid md:grid-cols-2 gap-4 mb-8">
+      {isManager ? (
         <Link
-          to="/rpp/new"
-          data-testid="card-create-rpp-manual"
-          className="group relative overflow-hidden rounded-2xl bg-[#0F382C] text-white p-6 hover:shadow-xl transition-shadow"
+          to="/users"
+          data-testid="card-manage-users"
+          className="group relative overflow-hidden rounded-2xl bg-[#0F382C] text-white p-6 mb-8 flex items-center gap-5 hover:shadow-xl transition-shadow"
         >
-          <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center mb-4">
+          <div className="w-12 h-12 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
             <Plus className="w-6 h-6" />
           </div>
-          <h3 className="text-xl font-bold">Buat RPP Manual</h3>
-          <p className="text-emerald-100/80 text-sm mt-1">Isi formulir lengkap RPP / Modul Ajar langkah demi langkah.</p>
+          <div>
+            <h3 className="text-xl font-bold">{user?.role === "superadmin" ? "Kelola Admin Sekolah" : "Kelola Akun Guru"}</h3>
+            <p className="text-emerald-100/80 text-sm mt-1">
+              {user?.role === "superadmin"
+                ? "Buat akun Admin. Dokumen seluruh guru terpantau di sini."
+                : "Buat akun guru. Semua dokumen guru otomatis tampil di dashboard Anda."}
+            </p>
+          </div>
           <div className="absolute -right-8 -bottom-8 w-40 h-40 rounded-full bg-emerald-600/30 blur-2xl group-hover:scale-125 transition-transform" />
         </Link>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-4 mb-8">
+          <Link
+            to="/rpp/new"
+            data-testid="card-create-rpp-manual"
+            className="group relative overflow-hidden rounded-2xl bg-[#0F382C] text-white p-6 hover:shadow-xl transition-shadow"
+          >
+            <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center mb-4">
+              <Plus className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold">Buat RPP Manual</h3>
+            <p className="text-emerald-100/80 text-sm mt-1">Isi formulir lengkap RPP / Modul Ajar langkah demi langkah.</p>
+            <div className="absolute -right-8 -bottom-8 w-40 h-40 rounded-full bg-emerald-600/30 blur-2xl group-hover:scale-125 transition-transform" />
+          </Link>
 
-        <Link
-          to="/rpp/new?mode=upload"
-          data-testid="card-create-rpp-upload"
-          className="group relative overflow-hidden rounded-2xl bg-white border-2 border-amber-300 p-6 hover:shadow-xl transition-shadow"
-        >
-          <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center mb-4">
-            <Upload className="w-6 h-6 text-amber-600" />
-          </div>
-          <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            Unggah PDF / Gambar <Sparkles className="w-4 h-4 text-amber-500" />
-          </h3>
-          <p className="text-slate-500 text-sm mt-1">AI membaca file Anda dan mengisi RPP secara otomatis untuk diedit.</p>
-        </Link>
-      </div>
+          <Link
+            to="/rpp/new?mode=upload"
+            data-testid="card-create-rpp-upload"
+            className="group relative overflow-hidden rounded-2xl bg-white border-2 border-amber-300 p-6 hover:shadow-xl transition-shadow"
+          >
+            <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center mb-4">
+              <Upload className="w-6 h-6 text-amber-600" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              Unggah PDF / Gambar <Sparkles className="w-4 h-4 text-amber-500" />
+            </h3>
+            <p className="text-slate-500 text-sm mt-1">AI membaca file Anda dan mengisi RPP secara otomatis untuk diedit.</p>
+          </Link>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
         <StatCard label="Total Dokumen" value={stats.total} icon={FolderOpen} highlight />
-        <StatCard label="RPP" value={stats.by_type.rpp || 0} icon={FileText} />
+        {isManager ? (
+          <StatCard label={user?.role === "superadmin" ? "Admin" : "Guru"} value={stats.managed_users || 0} icon={Users} />
+        ) : (
+          <StatCard label="RPP" value={stats.by_type.rpp || 0} icon={FileText} />
+        )}
         <StatCard label="ATP" value={stats.by_type.atp || 0} icon={Waypoints} />
         <StatCard label="LKPD" value={stats.by_type.lkpd || 0} icon={PencilRuler} />
       </div>
 
       {/* Generators */}
+      {user?.role !== "superadmin" && (
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold text-slate-900">Buat Perangkat Lain dengan AI</h2>
@@ -133,6 +182,7 @@ export default function Dashboard() {
           })}
         </div>
       </div>
+      )}
 
       {/* Library */}
       <div>
@@ -178,10 +228,15 @@ export default function Dashboard() {
                   <FileText className="w-5 h-5 text-emerald-800" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10px] uppercase font-bold tracking-wide px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
                       {TYPE_LABEL[doc.type] || doc.type}
                     </span>
+                    {isManager && doc.owner_name && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                        {doc.owner_name}
+                      </span>
+                    )}
                   </div>
                   <div className="font-semibold text-slate-800 truncate mt-1">{doc.title}</div>
                   <div className="text-xs text-slate-400">
@@ -193,10 +248,14 @@ export default function Dashboard() {
                     className="p-2 rounded-lg text-slate-500 hover:bg-emerald-50 hover:text-emerald-800" title="Lihat & Cetak">
                     <Eye className="w-[18px] h-[18px]" />
                   </Link>
-                  <Link to={`/view/${doc.id}?print=1`} data-testid={`btn-print-${doc.id}`}
-                    className="p-2 rounded-lg text-slate-500 hover:bg-emerald-50 hover:text-emerald-800" title="Cetak">
-                    <Printer className="w-[18px] h-[18px]" />
-                  </Link>
+                  <button onClick={() => downloadDocx(doc)} data-testid={`btn-docx-${doc.id}`}
+                    className="p-2 rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-700" title="Unduh Word (DOCX)">
+                    <FileDown className="w-[18px] h-[18px]" />
+                  </button>
+                  <button onClick={() => duplicate(doc.id)} data-testid={`btn-duplicate-${doc.id}`}
+                    className="p-2 rounded-lg text-slate-500 hover:bg-emerald-50 hover:text-emerald-800" title="Duplikat">
+                    <Copy className="w-[18px] h-[18px]" />
+                  </button>
                   <button onClick={(e) => remove(doc.id, e)} data-testid={`btn-delete-${doc.id}`}
                     className="p-2 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600" title="Hapus">
                     <Trash2 className="w-[18px] h-[18px]" />

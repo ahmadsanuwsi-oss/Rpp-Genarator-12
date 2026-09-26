@@ -6,6 +6,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
+from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
@@ -14,12 +15,19 @@ import logging
 import uuid
 import json
 import re
+import io
+import base64
 import tempfile
 import bcrypt
 import jwt
 from datetime import datetime, timezone, timedelta
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
+from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType, ImageContent
+from docx import Document
+from docx.shared import Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from htmldocx import HtmlToDocx
+from bs4 import BeautifulSoup
 
 # ---------------- DB ----------------
 mongo_url = os.environ['MONGO_URL']
@@ -30,6 +38,9 @@ JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGORITHM = "HS256"
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.1-pro-preview')
+GEMINI_IMAGE_MODEL = os.environ.get('GEMINI_IMAGE_MODEL', 'gemini-3.1-flash-image-preview')
+SUPERADMIN_EMAIL = os.environ.get('SUPERADMIN_EMAIL', 'superadmin@rpp.com')
+SUPERADMIN_PASSWORD = os.environ.get('SUPERADMIN_PASSWORD', 'admin123')
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -93,8 +104,15 @@ class ProfileInput(BaseModel):
     nip: Optional[str] = None
     jabatan: Optional[str] = None
     namaSekolah: Optional[str] = None
+    alamatSekolah: Optional[str] = None
     namaKepalaSekolah: Optional[str] = None
     nipKepalaSekolah: Optional[str] = None
+
+
+class CreateUserInput(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
 
 
 class DocumentInput(BaseModel):
@@ -128,9 +146,12 @@ async def register(data: RegisterInput):
         "email": email,
         "password_hash": hash_password(data.password),
         "role": "guru",
+        "admin_id": None,
+        "created_by": None,
         "nip": "",
         "jabatan": "Guru",
         "namaSekolah": "",
+        "alamatSekolah": "",
         "namaKepalaSekolah": "",
         "nipKepalaSekolah": "",
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -164,34 +185,139 @@ async def update_profile(data: ProfileInput, user: dict = Depends(get_current_us
     return fresh
 
 
+# ---------------- Role helpers & admin management ----------------
+async def visible_owner_ids(user: dict) -> Optional[List[str]]:
+    """Return list of owner_ids the user may see. None means ALL (superadmin)."""
+    role = user.get("role")
+    if role == "superadmin":
+        return None
+    if role == "admin":
+        gurus = await db.users.find({"admin_id": user["id"]}, {"id": 1, "_id": 0}).to_list(2000)
+        return [user["id"]] + [g["id"] for g in gurus]
+    return [user["id"]]
+
+
+def require_role(*roles):
+    async def dep(user: dict = Depends(get_current_user)) -> dict:
+        if user.get("role") not in roles:
+            raise HTTPException(status_code=403, detail="Akses ditolak")
+        return user
+    return dep
+
+
+@api_router.post("/admin/users")
+async def create_managed_user(data: CreateUserInput, user: dict = Depends(get_current_user)):
+    role = user.get("role")
+    if role == "superadmin":
+        new_role = "admin"
+    elif role == "admin":
+        new_role = "guru"
+    else:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    email = data.email.lower()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Email sudah terdaftar")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": data.name,
+        "email": email,
+        "password_hash": hash_password(data.password),
+        "role": new_role,
+        "admin_id": user["id"] if new_role == "guru" else None,
+        "created_by": user["id"],
+        "nip": "",
+        "jabatan": "Guru" if new_role == "guru" else "Admin",
+        "namaSekolah": user.get("namaSekolah", ""),
+        "alamatSekolah": user.get("alamatSekolah", ""),
+        "namaKepalaSekolah": "",
+        "nipKepalaSekolah": "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(doc)
+    return public_user(dict(doc))
+
+
+@api_router.get("/admin/users")
+async def list_managed_users(user: dict = Depends(get_current_user)):
+    role = user.get("role")
+    if role == "superadmin":
+        q = {"role": "admin"}
+    elif role == "admin":
+        q = {"admin_id": user["id"]}
+    else:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    users = await db.users.find(q, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(2000)
+    # attach doc counts
+    for u in users:
+        u["doc_count"] = await db.documents.count_documents({"owner_id": u["id"]})
+    return users
+
+
+@api_router.delete("/admin/users/{user_id}")
+async def delete_managed_user(user_id: str, user: dict = Depends(get_current_user)):
+    role = user.get("role")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="Pengguna tidak ditemukan")
+    if role == "superadmin" and target.get("role") == "admin":
+        pass
+    elif role == "admin" and target.get("admin_id") == user["id"]:
+        pass
+    else:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    await db.users.delete_one({"id": user_id})
+    return {"success": True}
+
+
 # ---------------- Document routes ----------------
 @api_router.get("/documents/stats")
 async def stats(user: dict = Depends(get_current_user)):
-    pipeline = [
-        {"$match": {"owner_id": user["id"]}},
-        {"$group": {"_id": "$type", "count": {"$sum": 1}}},
-    ]
+    ids = await visible_owner_ids(user)
+    match = {} if ids is None else {"owner_id": {"$in": ids}}
+    pipeline = [{"$match": match}, {"$group": {"_id": "$type", "count": {"$sum": 1}}}]
     rows = await db.documents.aggregate(pipeline).to_list(100)
     counts = {r["_id"]: r["count"] for r in rows}
     total = sum(counts.values())
-    return {"total": total, "by_type": counts}
+    extra = {}
+    if user.get("role") in ("admin", "superadmin"):
+        extra["managed_users"] = await db.users.count_documents(
+            {"role": "admin"} if user["role"] == "superadmin" else {"admin_id": user["id"]}
+        )
+    return {"total": total, "by_type": counts, **extra}
+
+
+async def _owner_name_map(owner_ids: List[str]) -> Dict[str, str]:
+    users = await db.users.find({"id": {"$in": list(set(owner_ids))}}, {"id": 1, "name": 1, "_id": 0}).to_list(2000)
+    return {u["id"]: u.get("name", "") for u in users}
 
 
 @api_router.get("/documents")
 async def list_documents(type: Optional[str] = None, user: dict = Depends(get_current_user)):
-    q = {"owner_id": user["id"]}
+    ids = await visible_owner_ids(user)
+    q = {} if ids is None else {"owner_id": {"$in": ids}}
     if type:
         q["type"] = type
-    docs = await db.documents.find(q, {"_id": 0, "content_html": 0}).sort("updated_at", -1).to_list(500)
+    docs = await db.documents.find(q, {"_id": 0, "content_html": 0}).sort("updated_at", -1).to_list(1000)
+    if user.get("role") in ("admin", "superadmin") and docs:
+        names = await _owner_name_map([d["owner_id"] for d in docs])
+        for d in docs:
+            d["owner_name"] = names.get(d["owner_id"], "")
     return docs
+
+
+async def _get_visible_doc(doc_id: str, user: dict) -> dict:
+    doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
+    ids = await visible_owner_ids(user)
+    if ids is not None and doc["owner_id"] not in ids:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    return doc
 
 
 @api_router.get("/documents/{doc_id}")
 async def get_document(doc_id: str, user: dict = Depends(get_current_user)):
-    doc = await db.documents.find_one({"id": doc_id, "owner_id": user["id"]}, {"_id": 0})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
-    return doc
+    return await _get_visible_doc(doc_id, user)
 
 
 @api_router.post("/documents")
@@ -213,11 +339,29 @@ async def create_document(data: DocumentInput, user: dict = Depends(get_current_
     return doc
 
 
+@api_router.post("/documents/{doc_id}/duplicate")
+async def duplicate_document(doc_id: str, user: dict = Depends(get_current_user)):
+    src = await _get_visible_doc(doc_id, user)
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "owner_id": user["id"],
+        "type": src["type"],
+        "title": f"{src['title']} (Salinan)",
+        "meta": src.get("meta", {}),
+        "fields": src.get("fields", {}),
+        "content_html": src.get("content_html"),
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.documents.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
 @api_router.put("/documents/{doc_id}")
 async def update_document(doc_id: str, data: DocumentInput, user: dict = Depends(get_current_user)):
-    existing = await db.documents.find_one({"id": doc_id, "owner_id": user["id"]})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
+    await _get_visible_doc(doc_id, user)
     update = {
         "title": data.title,
         "meta": data.meta,
@@ -232,15 +376,178 @@ async def update_document(doc_id: str, data: DocumentInput, user: dict = Depends
 
 @api_router.delete("/documents/{doc_id}")
 async def delete_document(doc_id: str, user: dict = Depends(get_current_user)):
-    res = await db.documents.delete_one({"id": doc_id, "owner_id": user["id"]})
-    if res.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
+    await _get_visible_doc(doc_id, user)
+    await db.documents.delete_one({"id": doc_id})
     return {"success": True}
+
+
+# ---------------- Dropdown options (from data + defaults) ----------------
+DEFAULT_OPTIONS = {
+    "mataPelajaran": [
+        "Bahasa Indonesia", "Matematika", "IPAS", "Pendidikan Pancasila",
+        "Bahasa Inggris", "PJOK", "Seni Budaya dan Prakarya (SBdP)",
+        "Pendidikan Agama Islam", "Akidah Akhlak", "Fikih", "Al-Qur'an Hadis",
+        "Sejarah Kebudayaan Islam", "Bahasa Arab",
+    ],
+    "kelas": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"],
+    "fase": ["Fase A", "Fase B", "Fase C", "Fase D", "Fase E", "Fase F"],
+    "semester": ["Ganjil", "Genap"],
+    "capaianPembelajaran": [],
+    "materi": [],
+    "alurTujuanPembelajaran": [],
+}
+
+
+@api_router.get("/options")
+async def get_options(user: dict = Depends(get_current_user)):
+    ids = await visible_owner_ids(user)
+    q = {} if ids is None else {"owner_id": {"$in": ids}}
+    docs = await db.documents.find(q, {"_id": 0, "fields": 1, "meta": 1}).to_list(1000)
+    collected = {k: set() for k in DEFAULT_OPTIONS}
+    field_keys = {
+        "mataPelajaran": ["mataPelajaran"],
+        "kelas": ["kelas"],
+        "fase": ["fase"],
+        "semester": ["semester"],
+        "capaianPembelajaran": ["capaianPembelajaran"],
+        "materi": ["materiPokok", "materi"],
+        "alurTujuanPembelajaran": ["alurTujuanPembelajaran", "tujuanPembelajaran"],
+    }
+    for d in docs:
+        src = {**(d.get("meta") or {}), **(d.get("fields") or {})}
+        for opt, keys in field_keys.items():
+            for k in keys:
+                v = str(src.get(k, "") or "").strip()
+                if v and len(v) < 600:
+                    collected[opt].add(v)
+    result = {}
+    for opt, defaults in DEFAULT_OPTIONS.items():
+        vals = sorted(collected[opt])
+        merged = list(dict.fromkeys(defaults + vals))
+        result[opt] = merged
+    return result
+
+
+# ---------------- DOCX export ----------------
+def _add_kop(document: Document, doc: dict):
+    f = doc.get("fields") or {}
+    m = doc.get("meta") or {}
+    sekolah = f.get("namaSekolah") or m.get("namaSekolah") or ""
+    alamat = f.get("alamatSekolah") or m.get("alamatSekolah") or ""
+    if sekolah:
+        p = document.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(sekolah.upper())
+        r.bold = True
+        r.font.size = Pt(14)
+    if alamat:
+        p = document.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(alamat)
+        r.font.size = Pt(10)
+    title = "RENCANA PELAKSANAAN PEMBELAJARAN (RPP)" if doc["type"] == "rpp" else (TYPE_LABEL_BE.get(doc["type"], "DOKUMEN")).upper()
+    p = document.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(title)
+    r.bold = True
+    r.font.size = Pt(12)
+    document.add_paragraph("_" * 90)
+
+
+TYPE_LABEL_BE = {
+    "rpp": "RPP", "prota": "Program Tahunan", "prosem": "Program Semester",
+    "kktp": "KKTP", "alokasi_waktu": "Alokasi Waktu", "atp": "ATP",
+    "asesmen": "Asesmen", "lkpd": "LKPD", "poster": "Poster",
+}
+
+RPP_SECTION_LABELS = [
+    ("identifikasiPesertaDidik", "Identifikasi Peserta Didik"),
+    ("capaianPembelajaran", "Capaian Pembelajaran (CP)"),
+    ("dimensiProfilLulusan", "Dimensi Profil Lulusan"),
+    ("topikPancaCinta", "Topik Panca Cinta"),
+    ("materiIntegrasiKBC", "Materi Integrasi Kurikulum Berbasis Cinta (KBC)"),
+    ("pemanfaatanDigital", "Pemanfaatan Digital"),
+    ("lintasDisiplin", "Lintas Disiplin Ilmu"),
+    ("tujuanPembelajaran", "Tujuan Pembelajaran"),
+    ("praktikPedagogik", "Praktik Pedagogik / Model Pembelajaran"),
+    ("kemitraan", "Kemitraan Pembelajaran"),
+    ("kegiatanAwal", "Langkah Pembelajaran - Kegiatan Awal"),
+    ("kegiatanInti", "Langkah Pembelajaran - Kegiatan Inti"),
+    ("penutup", "Langkah Pembelajaran - Penutup"),
+    ("asesmenAwal", "Asesmen Awal Pembelajaran"),
+    ("asesmenProses", "Asesmen Proses Pembelajaran"),
+    ("asesmenAkhir", "Asesmen Akhir (Sumatif)"),
+    ("rubrikPenilaian", "Rubrik Penilaian"),
+]
+
+
+@api_router.get("/documents/{doc_id}/docx")
+async def export_docx(doc_id: str, user: dict = Depends(get_current_user)):
+    doc = await _get_visible_doc(doc_id, user)
+    document = Document()
+    style = document.styles["Normal"]
+    style.font.name = "Times New Roman"
+    style.font.size = Pt(12)
+    _add_kop(document, doc)
+
+    if doc["type"] == "rpp":
+        f = doc.get("fields") or {}
+        identitas = [
+            ("Nama Guru", f.get("namaGuru")), ("NIP", f.get("nip")),
+            ("Jabatan", f.get("jabatan")), ("Satuan Pendidikan", f.get("namaSekolah")),
+            ("Mata Pelajaran", f.get("mataPelajaran")),
+            ("Kelas / Fase", " / ".join([x for x in [f.get("kelas"), f.get("fase")] if x])),
+            ("Semester", f.get("semester")), ("Materi Pokok", f.get("materiPokok")),
+            ("Alokasi Waktu", f.get("alokasiWaktu")), ("Tahun Ajaran", f.get("tahunAjaran")),
+        ]
+        identitas = [(k, v) for k, v in identitas if v]
+        if identitas:
+            table = document.add_table(rows=0, cols=2)
+            table.style = "Table Grid"
+            for k, v in identitas:
+                row = table.add_row().cells
+                row[0].text = k
+                row[1].text = str(v)
+            document.add_paragraph("")
+        for i, (key, label) in enumerate(RPP_SECTION_LABELS):
+            val = (f.get(key) or "").strip()
+            if not val:
+                continue
+            h = document.add_paragraph()
+            r = h.add_run(f"{chr(65 + (i % 26))}. {label}")
+            r.bold = True
+            document.add_paragraph(val)
+        # signature
+        document.add_paragraph("")
+        sig = document.add_table(rows=1, cols=2)
+        left, right = sig.rows[0].cells
+        left.text = f"Mengetahui,\nKepala Sekolah\n\n\n\n{f.get('namaKepalaSekolah') or '...........................'}\nNIP. {f.get('nipKepalaSekolah') or '...................'}"
+        right.text = f"Guru Mata Pelajaran\n\n\n\n{f.get('namaGuru') or '...........................'}\nNIP. {f.get('nip') or '...................'}"
+    else:
+        html = doc.get("content_html") or ""
+        # strip images (base64) for docx to avoid parser issues
+        soup = BeautifulSoup(html, "html.parser")
+        for img in soup.find_all("img"):
+            img.decompose()
+        try:
+            HtmlToDocx().add_html_to_document(str(soup), document)
+        except Exception:
+            document.add_paragraph(soup.get_text("\n"))
+
+    buf = io.BytesIO()
+    document.save(buf)
+    buf.seek(0)
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", doc.get("title", "dokumen"))[:60]
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{safe}.docx"'},
+    )
 
 
 # ---------------- AI helpers ----------------
 RPP_FIELDS = [
-    "namaGuru", "nip", "jabatan", "namaSekolah", "mataPelajaran", "kelas",
+    "namaGuru", "nip", "jabatan", "namaSekolah", "alamatSekolah", "mataPelajaran", "kelas",
     "semester", "fase", "materiPokok", "alokasiWaktu", "tahunAjaran",
     "namaKepalaSekolah", "nipKepalaSekolah",
     "identifikasiPesertaDidik", "capaianPembelajaran", "dimensiProfilLulusan",
@@ -327,6 +634,7 @@ async def extract_rpp(file: UploadFile = File(...), user: dict = Depends(get_cur
     fields["namaGuru"] = fields["namaGuru"] or user.get("name", "")
     fields["nip"] = fields["nip"] or user.get("nip", "")
     fields["namaSekolah"] = fields["namaSekolah"] or user.get("namaSekolah", "")
+    fields["alamatSekolah"] = fields["alamatSekolah"] or user.get("alamatSekolah", "")
     fields["namaKepalaSekolah"] = fields["namaKepalaSekolah"] or user.get("namaKepalaSekolah", "")
     fields["nipKepalaSekolah"] = fields["nipKepalaSekolah"] or user.get("nipKepalaSekolah", "")
     return {"fields": fields}
@@ -393,7 +701,47 @@ async def generate_document(data: GenerateInput, user: dict = Depends(get_curren
         raise HTTPException(status_code=500, detail=f"Gagal membuat dokumen: {e}")
 
     html = _clean_html(resp)
+
+    if data.type == "poster":
+        img_tag = await _generate_poster_image(inp)
+        if img_tag:
+            html = img_tag + html
+
     return {"content_html": html}
+
+
+async def _generate_poster_image(inp: dict) -> Optional[str]:
+    """Generate an illustration for the poster using Gemini Nano Banana. Returns an <img> tag with data URL."""
+    topic = str(inp.get("materi") or inp.get("mataPelajaran") or "pembelajaran").strip()
+    mapel = str(inp.get("mataPelajaran") or "").strip()
+    kelas = str(inp.get("kelas") or "").strip()
+    prompt = (
+        f"Educational poster illustration for elementary/school students about '{topic}'"
+        f"{f' ({mapel}, kelas {kelas})' if mapel else ''}. "
+        "Colorful, friendly, cartoon flat-illustration style, clean white background, "
+        "no text or letters in the image, suitable for a classroom learning poster."
+    )
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=str(uuid.uuid4()),
+            system_message="You are an assistant that generates educational illustrations.",
+        ).with_model("gemini", GEMINI_IMAGE_MODEL).with_params(modalities=["image", "text"])
+        _text, images = await chat.send_message_multimodal_response(UserMessage(text=prompt))
+        if images:
+            img = images[0]
+            mime = img.get("mime_type", "image/png")
+            data = img.get("data", "")
+            if data:
+                return (
+                    f'<div style="text-align:center;margin:0 0 16px;">'
+                    f'<img src="data:{mime};base64,{data}" '
+                    f'style="max-width:70%;height:auto;border-radius:8px;" alt="Ilustrasi poster" />'
+                    f'</div>'
+                )
+    except Exception:
+        logger.exception("poster image generation failed")
+    return None
 
 
 # ---------------- App wiring ----------------
@@ -417,7 +765,29 @@ app.add_middleware(
 async def startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("id")
+    await db.users.create_index("admin_id")
     await db.documents.create_index("owner_id")
+
+    # seed super admin
+    sa = await db.users.find_one({"email": SUPERADMIN_EMAIL.lower()})
+    if not sa:
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()),
+            "name": "Super Admin",
+            "email": SUPERADMIN_EMAIL.lower(),
+            "password_hash": hash_password(SUPERADMIN_PASSWORD),
+            "role": "superadmin",
+            "admin_id": None,
+            "created_by": None,
+            "nip": "", "jabatan": "Super Admin",
+            "namaSekolah": "", "alamatSekolah": "",
+            "namaKepalaSekolah": "", "nipKepalaSekolah": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    elif not verify_password(SUPERADMIN_PASSWORD, sa["password_hash"]):
+        await db.users.update_one({"email": SUPERADMIN_EMAIL.lower()}, {"$set": {
+            "password_hash": hash_password(SUPERADMIN_PASSWORD), "role": "superadmin"}})
+
     # seed demo guru
     demo_email = "guru@demo.com"
     if not await db.users.find_one({"email": demo_email}):
@@ -427,9 +797,12 @@ async def startup():
             "email": demo_email,
             "password_hash": hash_password("guru123"),
             "role": "guru",
+            "admin_id": None,
+            "created_by": None,
             "nip": "199001012020122001",
             "jabatan": "Guru Kelas",
             "namaSekolah": "MI Miftahul Jannah",
+            "alamatSekolah": "Jl. Pendidikan No. 1, Kec. Sukamaju, Kab. Bogor, Jawa Barat",
             "namaKepalaSekolah": "H. Zainur Ridho, S.Pd.I",
             "nipKepalaSekolah": "197505052005011003",
             "created_at": datetime.now(timezone.utc).isoformat(),

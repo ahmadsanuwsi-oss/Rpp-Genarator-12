@@ -2,14 +2,16 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import api, { apiErr } from "@/lib/api";
 import { GENERATORS, TYPE_LABEL } from "@/lib/docTypes";
+import { useOptions } from "@/lib/useOptions";
+import { ComboInput, SavedPicker } from "@/components/ComboInput";
 import { ArrowLeft, Sparkles, Save, Loader2, Wand2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 const INPUT_FIELDS = [
-  { key: "mataPelajaran", label: "Mata Pelajaran", ph: "Bahasa Indonesia" },
-  { key: "kelas", label: "Kelas", ph: "3" },
-  { key: "fase", label: "Fase", ph: "Fase B" },
-  { key: "semester", label: "Semester", ph: "Ganjil" },
+  { key: "mataPelajaran", label: "Mata Pelajaran", ph: "Bahasa Indonesia", option: "mataPelajaran" },
+  { key: "kelas", label: "Kelas", ph: "3", option: "kelas" },
+  { key: "fase", label: "Fase", ph: "Fase B", option: "fase" },
+  { key: "semester", label: "Semester", ph: "Ganjil", option: "semester" },
   { key: "tahunAjaran", label: "Tahun Ajaran", ph: "2026/2027" },
   { key: "alokasiWaktu", label: "Alokasi Waktu", ph: "18 JP" },
 ];
@@ -21,6 +23,7 @@ export default function Generator() {
 
   const cfg = GENERATORS.find((g) => g.key === type);
   const isEdit = !!id;
+  const options = useOptions();
 
   const [inputs, setInputs] = useState({});
   const [html, setHtml] = useState("");
@@ -105,28 +108,42 @@ export default function Generator() {
             {INPUT_FIELDS.map((f) => (
               <div key={f.key}>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-800 mb-1">{f.label}</label>
-                <input
-                  data-testid={`gen-input-${f.key}`}
-                  value={inputs[f.key] || ""} onChange={(e) => setInput(f.key, e.target.value)} placeholder={f.ph}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-emerald-700 focus:ring-1 focus:ring-emerald-700 outline-none text-sm"
-                />
+                {f.option ? (
+                  <ComboInput
+                    id={f.key}
+                    testid={`gen-input-${f.key}`}
+                    value={inputs[f.key] || ""}
+                    onChange={(v) => setInput(f.key, v)}
+                    options={options[f.option] || []}
+                    placeholder={f.ph}
+                  />
+                ) : (
+                  <input
+                    data-testid={`gen-input-${f.key}`}
+                    value={inputs[f.key] || ""} onChange={(e) => setInput(f.key, e.target.value)} placeholder={f.ph}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-emerald-700 focus:ring-1 focus:ring-emerald-700 outline-none text-sm"
+                  />
+                )}
               </div>
             ))}
           </div>
           <div className="mt-4">
             <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-800 mb-1">Capaian Pembelajaran (CP)</label>
+            <SavedPicker testid="gen-picker-cp" options={options.capaianPembelajaran || []} onPick={(v) => setInput("capaianPembelajaran", v)} />
             <textarea data-testid="gen-input-cp" value={inputs.capaianPembelajaran || ""} onChange={(e) => setInput("capaianPembelajaran", e.target.value)} rows={3}
               placeholder="Tempel Capaian Pembelajaran sesuai mapel & fase..."
               className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-emerald-700 focus:ring-1 focus:ring-emerald-700 outline-none text-sm resize-y" />
           </div>
           <div className="mt-4">
             <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-800 mb-1">Materi / Lingkup Materi</label>
+            <SavedPicker testid="gen-picker-materi" options={options.materi || []} onPick={(v) => setInput("materi", v)} />
             <textarea data-testid="gen-input-materi" value={inputs.materi || ""} onChange={(e) => setInput("materi", e.target.value)} rows={2}
               placeholder="Contoh: Panca indra dan fungsinya..."
               className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-emerald-700 focus:ring-1 focus:ring-emerald-700 outline-none text-sm resize-y" />
           </div>
           <div className="mt-4">
             <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-800 mb-1">Alur Tujuan Pembelajaran / Catatan (opsional)</label>
+            <SavedPicker testid="gen-picker-atp" options={options.alurTujuanPembelajaran || []} onPick={(v) => setInput("alurTujuanPembelajaran", v)} />
             <textarea data-testid="gen-input-atp" value={inputs.alurTujuanPembelajaran || ""} onChange={(e) => setInput("alurTujuanPembelajaran", e.target.value)} rows={2}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-emerald-700 focus:ring-1 focus:ring-emerald-700 outline-none text-sm resize-y" />
           </div>

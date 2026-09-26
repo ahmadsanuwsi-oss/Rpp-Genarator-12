@@ -10,6 +10,7 @@ const FIELDS = [
   { key: "nip", label: "NIP" },
   { key: "jabatan", label: "Jabatan" },
   { key: "namaSekolah", label: "Nama Sekolah / Satuan Pendidikan" },
+  { key: "alamatSekolah", label: "Alamat Sekolah (untuk Kop)" },
   { key: "namaKepalaSekolah", label: "Nama Kepala Sekolah" },
   { key: "nipKepalaSekolah", label: "NIP Kepala Sekolah" },
 ];
