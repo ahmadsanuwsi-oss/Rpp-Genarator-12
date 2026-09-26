@@ -1,0 +1,90 @@
+{
+  "project_title": "RPP Digital Studio - Indonesian Teacher Document Suite",
+  "archetype": "ORGANIC & EARTHY ACADEMIC PROFESSIONAL",
+  "theme_strategy": {
+    "default_mode": "light",
+    "theme_description": "Clean, official, and soothing academic layout tailored for Indonesian educators under Kurikulum Merdeka & K13 standards. Combines modern teacher SaaS dashboard with realistic A4 paper print workspace."
+  },
+  "typography": {
+    "headings_font": "Plus Jakarta Sans, sans-serif",
+    "body_font": "Plus Jakarta Sans, sans-serif",
+    "document_print_font": "Times New Roman, Georgia, serif",
+    "mono_font": "JetBrains Mono, monospace",
+    "heading_scale": {
+      "h1_hero": "text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight",
+      "h2_section": "text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight",
+      "h3_subsection": "text-lg sm:text-xl font-semibold",
+      "h4_card": "text-base sm:text-lg font-semibold",
+      "body_text": "text-sm sm:text-base leading-relaxed",
+      "label_text": "text-xs uppercase tracking-wider font-medium text-emerald-800"
+    }
+  },
+  "colors": {
+    "primary": {
+      "deep_emerald": "#0F382C",
+      "forest_teal": "#1B4D3E",
+      "soft_sage": "#E2E8E0",
+      "accent_gold": "#D97706"
+    },
+    "surface": {
+      "app_bg": "#F8FAFC",
+      "paper_a4_bg": "#FFFFFF",
+      "card_bg": "#FFFFFF",
+      "sidebar_bg": "#0B261E",
+      "preview_desk_bg": "#EEF2F0"
+    },
+    "neutral": {
+      "dark_text": "#0F172A",
+      "muted_text": "#475569",
+      "subtle_border": "#CBD5E1",
+      "print_border": "#000000"
+    },
+    "interactive": {
+      "button_primary": "bg-emerald-800 hover:bg-emerald-900 text-white shadow-sm transition-all",
+      "button_secondary": "bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 transition-all",
+      "button_accent": "bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-md transition-all",
+      "badge_active": "bg-emerald-100 text-emerald-800 border-emerald-300",
+      "badge_ai": "bg-purple-100 text-purple-800 border-purple-300 font-semibold"
+    }
+  },
+  "spacing_and_layout": {
+    "container_padding": "p-4 sm:p-6 lg:p-8",
+    "grid_gap": "gap-4 sm:gap-6",
+    "a4_paper_specs": {
+      "width_mm": "210mm",
+      "min_height_mm": "297mm",
+      "aspect_ratio": "aspect-[1/1.414]",
+      "padding": "p-[20mm] sm:p-[25mm]",
+      "shadow": "shadow-2xl ring-1 ring-slate-900/10 rounded-sm"
+    }
+  },
+  "key_features_to_build": [
+    "Authentication (Guru Login/Register & Profile settings with NIP, School Name, Headmaster Name)",
+    "Dashboard with statistics (Total RPP, Prota, Prosem, KKTP, LKPD, Posters, Last Edited)",
+    "Dual RPP Creation Flow: 1) Multi-step Manual Form 2) AI File Upload (PDF/Scan/Image OCR & Gemini extraction)",
+    "Document Generators Suite: Prota, Prosem, KKTP, Alokasi Waktu, ATP, Asesmen Rubrik & Soal, LKPD Interactive Worksheet, Poster Media Pembelajaran Generator",
+    "Live Editable Preview Mode (Rich text / structured inputs) before saving",
+    "Saved Documents Library (Filter by Mata Pelajaran, Kelas/Fase, Kurikulum, Type with search & tags)",
+    "A4 Print Workspace with official Kop Sekolah header, signatures section, page-break print optimization (@media print styling)"
+  ],
+  "image_urls": {
+    "hero_teacher_banner": "https://images.unsplash.com/photo-1589104760192-ccab0ce0d90f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDZ8MHwxfHNlYXJjaHxfdGVhY2hlcnxlbnwwfHx8fDE3OTA0MTkzOTh8MA&ixlib=rb-4.1.0&q=85",
+    "classroom_workspace": "https://images.unsplash.com/photo-1786667395410-7bc4df5d7569?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDZ8MHwxfHNlYXJjaHxfY2xhc3Nyb29tfGVufDB8fHx8MTc5MDQxOTM5OHww&ixlib=rb-4.1.0&q=85",
+    "indonesian_students": "https://images.unsplash.com/photo-1625111380820-9a371d413cc4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDZ8MHwxfHNlYXJjaHxfc3R1ZGVudHN8ZW58MHx8fDE3OTA0MTkzOTh8MA&ixlib=rb-4.1.0&q=85",
+    "document_reading": "https://images.unsplash.com/photo-1624260473744-61f2cff4fb96?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDZ8MHwxfHNlYXJjaHxfZG9jdW1lbnR8ZW58MHx8fDE3OTA0MTkzOTh8MA&ixlib=rb-4.1.0&q=85"
+  },
+  "instructions_to_main_agent": [
+    "Ensure all components use standard JavaScript file extensions (.js or .jsx) as configured in the repo.",
+    "Always include comprehensive `data-testid` attributes on interactive elements (e.g. `data-testid='btn-create-rpp-manual'`, `data-testid='input-pdf-upload'`, `data-testid='btn-print-a4'`).",
+    "Implement full support for `@media print` CSS so clicking Print accurately prints clean A4 documents without UI sidebars or buttons.",
+    "Provide built-in templates for Kurikulum Merdeka (Modul Ajar / RPP) and K13 formats with standard Indonesian educational terms: Identitas, Capaian Pembelajaran (CP), Alur Tujuan Pembelajaran (ATP), Profil Pelajar Pancasila, Pertanyaan Pemantik, Kegiatan Pembelajaran (Pendahuluan, Inti, Penutup), and Asesmen.",
+    "Provide easy quick-demo sample files and pre-loaded templates for teachers so they can generate documents instantly.",
+    "Use Lucide-React icons for intuitive navigation (e.g., FileText, Upload, Printer, Sparkles, BookOpen, Calendar, Layers, CheckCircle, Download)."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": {
+    "no_ai_slop": "Avoid standard dark corporate SaaS defaults. Use warm academic emerald hues and authentic paper sheet styling.",
+    "data_testid_requirement": "All interactive elements, buttons, form controls, and saved items MUST include descriptive kebab-case data-testid attributes.",
+    "no_transparent_overlays": "Header and dropdown menus must have solid or crisp backdrop-blur backgrounds with borders, never raw transparent.",
+    "print_readiness": "Every document view must look like an official A4 document with crisp margins, school letterhead (Kop Sekolah), and signature blocks."
+  }
+}
